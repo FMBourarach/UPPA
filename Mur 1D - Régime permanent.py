@@ -7,27 +7,49 @@ Created on Mon Oct 2 09:47 2023
 """
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import animation
+import sys
+
+
+def progress(count, total, status="Thermal Simulation "):
+    """
+    [New function]
+    Prints a progress bar in Anaconda Prompt
+
+    REFERENCE:
+    ----------
+    http://stackoverflow.com/questions/3173320/text-progress-bar-in-the-console/27871113#comment50529068_27871113
+    """
+    bar_len = 50
+    filled_len = int(round(bar_len * count / float(total)))
+
+    percents = round(100.0 * count / float(total), 1)
+    bar = "=" * filled_len + "-" * (bar_len - filled_len)
+
+    sys.stdout.write("[%s] %s%s ...%s\r" % (bar, percents, "%", status))
+    sys.stdout.flush()
 
 
 # ========================================
 # Déclaration des paramètres
 # ========================================
 
-mMax = 15       # [-] nombre de pas d'espace
+mMax = 20       # [-] nombre de pas d'espace
 
-R = 0.1         # [m] épaisseur du mur
-D = 720        # [s] durée de la simulation
+R = 1         # [m] épaisseur du mur
+D = 60*60        # [s] durée de la simulation
 
 dt = 0.1        # [s] pas de temps de simulation
 dtLog = 72       # [s] pas de temps de sauvegardeè2
 
 rho = 2*240       # [kg/m3] masse volumique
-C  = lambda T : 800   + 10*(T-20)       # [kg/m3] capacité calorifique
-k = lambda T : 1.6 + 0.01*(T-20)         # [W/(m.K)] conductivité thermique
+C = 800 # [kg/m3] capacité calorifique
+k = 35 # [W/(m.K)] conductivité thermique
 
-phi =  1000     # densité de flux imposée W/m2
+TG =  10     # Temperature imposée côté gauche °C
+TD =  100     # Temperature imposée côté droit °C
 
-T0 = 20         # [°C] température initiale
+T0 = 35         # [°C] température initiale
 
 
 
@@ -35,76 +57,79 @@ T0 = 20         # [°C] température initiale
 # préparation des géométries
 # ========================================
 
-dr = R/mMax
-S = np.zeros(mMax)
-V = np.zeros(mMax)
+dx = R/mMax # distance elementaire
+S = 1 # Surface m²
+V = S * dx
 
-r = lambda m : (m+1-0.5)*dr
-
-for m in range(0,mMax):
-    S[m] = 4*np.pi*(r(m+0.5)**2)
-    V[m] = 4*np.pi*(r(m+0.5)**3-r(m-0.5)**3)/3
-    
 # ========================================
 # Routine d'export
 # ========================================
 data = np.zeros((0,3)) # variable pour le tracé de l'évolution temporelle
 def export():
     global data
-    x = [ r(m) for m in range(mMax)]
+    x = [ dx for m in range(mMax)]
     plt.plot(x,T, label=f"{time:10.2f}s")
     plt.legend()
     data = np.append(data, [[time, T[0], T[mMax-1]]], axis=0)
-   
+
 # ========================================
 # Résolution
 # ========================================
 
-T = np.zeros(mMax)
-T[:] = T0       # Condition initiale
+T = np.zeros((int(D/dt),mMax))
+T[0::] = T0       # Condition initiale
 EVOL = np.zeros(mMax)
 
-
-time = 0 # temps physique [s]
-
-nextLog = 0 # instant de la prochaine sauvegarde
-
-while time<D:
-    # Sauvegarde ?
-    if time>=nextLog:
-        export()
-        nextLog += dtLog # planification de la prochaine sauvegarde
-    
+for time in range(1,int(D/dt)): # temps physique [s]
+    progress(time, int(D/dt)-1, status="Mur 1D permanant")
     for m in range(mMax):
         # Calcul du flux GAUCHE
         if m==0:
-            FG = 0
+            flux_gauche = 2*k*S/dx * (      TG      - T[time-1,m])
         else:
-            k_tmp = k(0.5*(T[m-1]+T[m])) 
-            FG = k_tmp*S[m-1]*(T[m-1]-T[m])/dr
-        
+            flux_gauche =   k*S/dx * (T[time-1,m-1] - T[time-1,m])
+
         # Calcul du flux DROIT
         if m==mMax-1:
-            FD = phi*S[m]
+            flux_droit = 2*k*S/dx * (     TD       - T[time-1,m])
         else:
-            k_tmp = k(0.5*(T[m+1]+T[m])) 
-            FD = k_tmp*S[m]*(T[m+1]-T[m])/dr
-        
+            flux_droit =   k*S/dx * (T[time-1,m+1] - T[time-1,m])
+
         # calculer le bilan
-        EVOL[m] = (FG+FD)/(rho*C(T[m])*V[m])
+        EVOL[m] = (flux_gauche + flux_droit)/(rho*C*V/dt)
     
     # préparer l'itération suivante
-    T[:]=T[:] + EVOL[:]
+    T[time,:] = T[time-1,:] + EVOL[:]
     time = time + dt
-    
 
-plt.savefig(f"graph_full.png")
-plt.close()
 
-plt.plot(data[:,0],data[:,1],label="centre")
-plt.plot(data[:,0],data[:,2],label="paroi")
-plt.legend()
-plt.savefig("graph_evol.png")
-plt.close
+# ========================================
+# Graphiques
+# ========================================
 
-    
+# ----------- Statique -------------
+plt.ylim((min(TG,TD)-1, max(TG,TD)+1))
+plt.plot(T[1::250,:].T)
+plt.axhline(y=TG, color='r', linestyle='--', label="TG")
+plt.axhline(y=TD, color='r', linestyle='--', label="TD")
+plt.show()
+
+# ------------ Animation ------------
+T_sliced = T[0::50,::] #
+
+fig = plt.figure()
+ax = plt.axes(xlim=(0, mMax), ylim=(min(TG,TD)-1, max(TG,TD)+1))
+line, = ax.plot([], [])
+
+def init():
+    line.set_data([], [])
+    return line,
+
+def animate(i):
+    line.set_data(range(0,len(T_sliced[i,:])), T_sliced[i,:])
+    return line,
+
+anim = animation.FuncAnimation(fig, animate, init_func=init,
+                               frames=int(D/dt)//100, interval=dt/1000, blit=True)
+
+print("stop")
