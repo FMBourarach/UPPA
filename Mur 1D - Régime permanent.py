@@ -46,8 +46,15 @@ rho = 2*240       # [kg/m3] masse volumique
 C = 800 # [kg/m3] capacité calorifique
 k = 35 # [W/(m.K)] conductivité thermique
 
+### Choisir les conditions aux limites
+
 TG =  10     # Temperature imposée côté gauche °C
 TD =  100     # Temperature imposée côté droit °C
+
+T_air_droit = 100 # °C
+h_droit = 10000 # W.m-2.K-1
+T_air_gauche = 25 # °C
+h_gauche = 20 # W.m-2.K-1
 
 T0 = 35         # [°C] température initiale
 
@@ -91,7 +98,8 @@ for time in range(1,int(D/dt)): # temps physique [s]
 
         # Calcul du flux DROIT
         if m==mMax-1:
-            flux_droit = 2*k*S/dx * (     TD       - T[time-1,m])
+            # flux_droit = 2*k*S/dx * (     TD       - T[time-1,m])
+            flux_droit = S/(dx/(k*2) + 1/h_droit) * (     T_air_droit       - T[time-1,m])
         else:
             flux_droit =   k*S/dx * (T[time-1,m+1] - T[time-1,m])
 
@@ -109,7 +117,7 @@ for time in range(1,int(D/dt)): # temps physique [s]
 
 # ----------- Statique -------------
 plt.ylim((min(TG,TD)-1, max(TG,TD)+1))
-plt.plot(T[1::250,:].T)
+plt.plot(T[0::250,:].T)
 plt.axhline(y=TG, color='r', linestyle='--', label="TG")
 plt.axhline(y=TD, color='r', linestyle='--', label="TD")
 plt.show()
